@@ -1,0 +1,298 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/american_spincast_foundry/app/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+// NextAuth.js Models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  role          String    @default("operator") // operator, qa_manager, supervisor, admin
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Foundry Management Models
+
+// Work Orders - Job tracking and scheduling
+model WorkOrder {
+  id                String        @id @db.VarChar(20) @map("work_order_id")
+  workOrderNumber   String        @db.VarChar(50) @map("work_order_number")
+  customerId        Int?          @map("customer_id")
+  partSpecification String?       @db.Text @map("part_specification")
+  quantityOrdered   Int?          @map("quantity_ordered")
+  orderDate         DateTime?     @db.Date @map("order_date")
+  dueDate          DateTime?     @db.Date @map("due_date")
+  priorityLevel    String?       @db.VarChar(10) @map("priority_level")
+  status           String?       @db.VarChar(20)
+  createdDate      DateTime      @default(now()) @map("created_date")
+  updatedDate      DateTime      @updatedAt @map("updated_date")
+  
+  // Relations
+  castingRuns      CastingRun[]
+
+  @@index([orderDate], name: "idx_work_order_date")
+  @@map("work_orders")
+}
+
+// Alloy Types - Material specifications and properties
+model AlloyType {
+  id                        String      @id @db.VarChar(10) @map("alloy_id")
+  alloyName                String      @db.VarChar(50) @map("alloy_name")
+  alloySpecification       String?     @db.Text @map("alloy_specification")
+  chemicalComposition      Json?       @map("chemical_composition")
+  mechanicalProperties     Json?       @map("mechanical_properties")
+  meltingTemperatureRange  String?     @db.VarChar(20) @map("melting_temperature_range")
+  pouringTemperatureRange  String?     @db.VarChar(20) @map("pouring_temperature_range")
+  qualityStandards         String?     @db.Text @map("quality_standards")
+  createdDate              DateTime    @default(now()) @map("created_date")
+  
+  // Relations
+  heatNumbers              HeatNumber[]
+
+  @@map("alloy_types")
+}
+
+// Heat Numbers - Material batch traceability
+model HeatNumber {
+  id                   Int                  @id @default(autoincrement()) @map("heat_id")
+  heatNumber          String               @unique @db.VarChar(20) @map("heat_number")
+  alloyId             String?              @db.VarChar(10) @map("alloy_id")
+  batchSizeKg         Decimal?             @db.Decimal(10,2) @map("batch_size_kg")
+  meltDate            DateTime?            @db.Date @map("melt_date")
+  meltTime            DateTime?            @db.Time @map("melt_time")
+  furnaceId           String?              @db.VarChar(10) @map("furnace_id")
+  chemicalAnalysis    Json?                @map("chemical_analysis")
+  temperatureLog      Json?                @map("temperature_log")
+  qualityCertification String?             @db.VarChar(50) @map("quality_certification")
+  status              String?              @db.VarChar(20)
+  
+  // Relations
+  alloyType           AlloyType?           @relation(fields: [alloyId], references: [id])
+  castingRuns         CastingRun[]
+
+  @@index([heatNumber], name: "idx_heat_number")
+  @@map("heat_numbers")
+}
+
+// Mold Specifications - Tooling and dimensional data
+model MoldSpecification {
+  id                   String        @id @db.VarChar(20) @map("mold_id")
+  moldType            String?        @db.VarChar(50) @map("mold_type")
+  dimensions          Json?
+  castingSize         String?        @db.VarChar(50) @map("casting_size")
+  weightCapacityKg    Decimal?       @db.Decimal(8,2) @map("weight_capacity_kg")
+  material            String?        @db.VarChar(50)
+  conditionStatus     String?        @db.VarChar(20) @map("condition_status")
+  lastMaintenanceDate DateTime?      @db.Date @map("last_maintenance_date")
+  usageCount          Int            @default(0) @map("usage_count")
+  createdDate         DateTime       @default(now()) @map("created_date")
+  
+  // Relations
+  castingRuns         CastingRun[]
+
+  @@map("mold_specifications")
+}
+
+// Spinner Equipment - Centrifugal casting equipment
+model SpinnerEquipment {
+  id                   String              @id @db.VarChar(10) @map("spinner_id")
+  equipmentModel      String?             @db.VarChar(50) @map("equipment_model")
+  serialNumber        String?             @db.VarChar(50) @map("serial_number")
+  installationDate    DateTime?           @db.Date @map("installation_date")
+  ratedRpmMax         Int?                @map("rated_rpm_max")
+  ratedCapacityKg     Decimal?            @db.Decimal(8,2) @map("rated_capacity_kg")
+  currentCondition    String?             @db.VarChar(20) @map("current_condition")
+  lastMajorService    DateTime?           @db.Date @map("last_major_service")
+  serviceIntervalHours Int?               @map("service_interval_hours")
+  totalOperatingHours Int?               @map("total_operating_hours")
+  status              String?             @db.VarChar(20)
+  
+  // Relations
+  maintenanceRecords  MaintenanceRecord[]
+
+  @@map("spinner_equipment")
+}
+
+// Casting Runs - Central production table
+model CastingRun {
+  id                  Int                   @id @default(autoincrement()) @map("casting_run_id")
+  workOrderId         String?               @db.VarChar(20) @map("work_order_id")
+  heatId              Int?                  @map("heat_id")
+  moldId              String?               @db.VarChar(20) @map("mold_id")
+  shiftNumber         String?               @db.VarChar(10) @map("shift_number")
+  operatorId          String?               @db.VarChar(20) @map("operator_id")
+  castingDate         DateTime?             @db.Date @map("casting_date")
+  castingTime         DateTime?             @db.Time @map("casting_time")
+  spinnerId           String?               @db.VarChar(10) @map("spinner_id")
+  rpmSetting          Int?                  @map("rpm_setting")
+  actualRpm           Int?                  @map("actual_rpm")
+  pourTemperature     Decimal?              @db.Decimal(6,2) @map("pour_temperature")
+  ambientTemperature  Decimal?              @db.Decimal(5,2) @map("ambient_temperature")
+  castingWeightKg     Decimal?              @db.Decimal(8,2) @map("casting_weight_kg")
+  cycleTimeMinutes    Int?                  @map("cycle_time_minutes")
+  packageInfo         String?               @db.VarChar(50) @map("package_info")
+  operationalGravity  Decimal?              @db.Decimal(4,3) @map("operational_gravity")
+  status              String?               @db.VarChar(20)
+  notes               String?               @db.Text
+  
+  // Relations
+  workOrder           WorkOrder?            @relation(fields: [workOrderId], references: [id])
+  heatNumber          HeatNumber?           @relation(fields: [heatId], references: [id])
+  moldSpecification   MoldSpecification?    @relation(fields: [moldId], references: [id])
+  qualityInspections  QualityInspection[]
+  defectRecords       DefectRecord[]
+  processParameters   ProcessParameter[]
+
+  @@index([castingDate], name: "idx_casting_date")
+  @@index([workOrderId], name: "idx_casting_work_order")
+  @@index([heatId], name: "idx_casting_heat")
+  @@map("casting_runs")
+}
+
+// Quality Inspections - Assessment results and ratings
+model QualityInspection {
+  id                     Int            @id @default(autoincrement()) @map("inspection_id")
+  castingRunId          Int?           @map("casting_run_id")
+  inspectionDate        DateTime?      @db.Date @map("inspection_date")
+  inspectionTime        DateTime?      @db.Time @map("inspection_time")
+  inspectorId           String?        @db.VarChar(20) @map("inspector_id")
+  inspectionType        String?        @db.VarChar(30) @map("inspection_type")
+  overallRating         Int?           @map("overall_rating")
+  dimensionalCheck      Json?          @map("dimensional_check")
+  surfaceQualityRating  Int?           @map("surface_quality_rating")
+  internalQualityRating Int?           @map("internal_quality_rating")
+  defectsFound          Json?          @map("defects_found")
+  correctiveActions     String?        @db.Text @map("corrective_actions")
+  passFailStatus        String?        @db.VarChar(10) @map("pass_fail_status")
+  certificationLevel    String?        @db.VarChar(20) @map("certification_level")
+  notes                 String?        @db.Text
+  
+  // Relations
+  castingRun            CastingRun?    @relation(fields: [castingRunId], references: [id])
+  defectRecords         DefectRecord[]
+
+  @@index([inspectionDate], name: "idx_quality_date")
+  @@index([castingRunId], name: "idx_inspection_casting")
+  @@index([overallRating], name: "idx_quality_rating")
+  @@map("quality_inspections")
+}
+
+// Defect Records - Issue tracking and classification
+model DefectRecord {
+  id                  Int                @id @default(autoincrement()) @map("defect_id")
+  inspectionId        Int?               @map("inspection_id")
+  castingRunId        Int?               @map("casting_run_id")
+  defectType          String?            @db.VarChar(50) @map("defect_type")
+  defectSeverity      String?            @db.VarChar(20) @map("defect_severity")
+  defectLocation      String?            @db.VarChar(100) @map("defect_location")
+  defectDescription   String?            @db.Text @map("defect_description")
+  probableCause       String?            @db.Text @map("probable_cause")
+  correctiveAction    String?            @db.Text @map("corrective_action")
+  preventionMeasures  String?            @db.Text @map("prevention_measures")
+  costImpact          Decimal?           @db.Decimal(10,2) @map("cost_impact")
+  resolutionDate      DateTime?          @db.Date @map("resolution_date")
+  status              String?            @db.VarChar(20)
+  
+  // Relations
+  qualityInspection   QualityInspection? @relation(fields: [inspectionId], references: [id])
+  castingRun          CastingRun?        @relation(fields: [castingRunId], references: [id])
+
+  @@index([defectType], name: "idx_defect_type")
+  @@index([castingRunId], name: "idx_defect_casting")
+  @@index([defectSeverity], name: "idx_defect_severity")
+  @@map("defect_records")
+}
+
+// Maintenance Records - Service and inspection logs
+model MaintenanceRecord {
+  id                     Int               @id @default(autoincrement()) @map("maintenance_id")
+  spinnerId             String?           @db.VarChar(10) @map("spinner_id")
+  maintenanceDate       DateTime?         @db.Date @map("maintenance_date")
+  maintenanceType       String?           @db.VarChar(30) @map("maintenance_type")
+  technicianId          String?           @db.VarChar(20) @map("technician_id")
+  currentRpm            Int?              @map("current_rpm")
+  targetRpm             Int?              @map("target_rpm")
+  vibrationLevel        Decimal?          @db.Decimal(6,3) @map("vibration_level")
+  temperatureReading    Decimal?          @db.Decimal(5,2) @map("temperature_reading")
+  maintenancePerformed  String?           @db.Text @map("maintenance_performed")
+  partsReplaced         Json?             @map("parts_replaced")
+  cost                  Decimal?          @db.Decimal(8,2)
+  nextServiceDate       DateTime?         @db.Date @map("next_service_date")
+  conditionAfterService String?           @db.VarChar(20) @map("condition_after_service")
+  notes                 String?           @db.Text
+  
+  // Relations
+  spinnerEquipment      SpinnerEquipment? @relation(fields: [spinnerId], references: [id])
+
+  @@index([maintenanceDate], name: "idx_maintenance_date")
+  @@index([spinnerId], name: "idx_maintenance_spinner")
+  @@map("maintenance_records")
+}
+
+// Process Parameters - Real-time process monitoring data
+model ProcessParameter {
+  id                   Int         @id @default(autoincrement()) @map("parameter_id")
+  castingRunId        Int?        @map("casting_run_id")
+  parameterType       String?     @db.VarChar(30) @map("parameter_type")
+  measurementTime     DateTime?   @map("measurement_time")
+  parameterValue      Decimal?    @db.Decimal(10,3) @map("parameter_value")
+  parameterUnit       String?     @db.VarChar(10) @map("parameter_unit")
+  targetValue         Decimal?    @db.Decimal(10,3) @map("target_value")
+  toleranceRange      String?     @db.VarChar(20) @map("tolerance_range")
+  withinSpecification Boolean?    @map("within_specification")
+  measurementDevice   String?     @db.VarChar(50) @map("measurement_device")
+  operatorId          String?     @db.VarChar(20) @map("operator_id")
+  
+  // Relations
+  castingRun          CastingRun? @relation(fields: [castingRunId], references: [id])
+
+  @@map("process_parameters")
+}
